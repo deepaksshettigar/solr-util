@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<solr>
+    <server type="master" name="LibrarySolrServer">
+        <host>localhost</host>
+        <port>8983</port>
+    </server>
+    <server type="slave" name="LibrarySolrServer">
+        <host>localhost</host>
+        <port>8983</port>
+        <master-host>localhost</master-host>
+        <master-port>8983</master-port>
+    </server>
+</solr>
