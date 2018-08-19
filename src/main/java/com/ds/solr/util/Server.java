@@ -3,6 +3,7 @@ package com.ds.solr.util;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 
 public class Server {
+
     @JacksonXmlProperty(isAttribute = true)
     private String type;
 

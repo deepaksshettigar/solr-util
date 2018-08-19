@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<servers>
+    <server group="LibrarySolrServer">
+        <instance master="true" slave="false" reference="true">
+            <host>127.0.0.1</host>
+            <port>8983</port>
+        </instance>
+        <instance master="true" slave="false" reference="false">
+            <host>localhost</host>
+            <port>8983</port>
+        </instance>
+        <instance master="false" slave="true" reference="false">
+            <host>localhost</host>
+            <port>8983</port>
+            <master-host>localhost</master-host>
+            <master-port>8983</master-port>
+        </instance>
+    </server>
+</servers>

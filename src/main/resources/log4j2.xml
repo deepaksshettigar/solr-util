@@ -2,7 +2,7 @@
 <Configuration status="WARN" monitorInterval="30">
     <Properties>
         <Property name="LOG_PATTERN">
-            %d{yyyy-MM-dd HH:mm:ss.SSS} %highlight{%5p}{STYLE=LogBack} --- [%5.15t] Line %3L %-30.40c{1.} %-10M() : %m%n%ex
+            %d{yyyy-MM-dd HH:mm:ss.SSS} %highlight{%5p}{STYLE=LogBack} --- [%5.15t] Line %3L %-30.40c{1.} : %highlight{%m}{STYLE=LogBack}%n%ex
         </Property>
     </Properties>
     <Appenders>
@@ -22,7 +22,7 @@
         </RollingFile>
     </Appenders>
     <Loggers>
-        <Logger name="com.ds" level="info" additivity="false">
+        <Logger name="com.ds" level="debug" additivity="false">
             <AppenderRef ref="ConsoleAppender" />
             <AppenderRef ref="FileAppender" />
         </Logger>

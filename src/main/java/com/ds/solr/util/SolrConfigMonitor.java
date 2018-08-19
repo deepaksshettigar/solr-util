@@ -1,11 +1,14 @@
 package com.ds.solr.util;
 
+import com.ds.solr.pojo.Instance;
+import com.ds.solr.pojo.Servers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -33,14 +36,12 @@ import java.util.*;
 @SpringBootApplication
 public class SolrConfigMonitor {
     private static final Logger log = LogManager.getLogger(SolrConfigMonitor.class);
-    // LoggerContext logctx = (LoggerContext) LogManager.getContext();
+
+    @Autowired
+    private static SolrConfigService solrConfigService;
+
 
     private static final Map<String, String> SOLR_INSTANCES = initMap();
-
-    public SolrConfigMonitor() {
-
-
-    }
 
     private static Map<String, String> initMap() {
         Map<String, String> map = new HashMap<>();
@@ -49,43 +50,31 @@ public class SolrConfigMonitor {
         return stringStringMap;
     }
 
-    private String SOLR_ADMIN_URL_FORMAT="http://%s:%s/solr/admin/cores?wt=xml";
-    private static List<String> SOLR_CORES= Arrays.asList(new String[]{"http://localhost:%s/solr/admin/cores?wt=xml"});
+    private static String SOLR_ADMIN_URL_FORMAT = "http://%s:%s/solr/admin/cores?wt=xml";
+    private static String SOLR_CONFIG_URL_FORMAT = "http://%s:%s/solr/%s/admin/file?file=solrconfig-dummy.xml";
+    private static String SOLR_QUERY_URL_FORMAT = "http://%s:%s/solr/%s/select?q=*:*&wt=xml&rows=0";
+    private static String SOLR_REPLICATION_URL_FORMAT = "http://%s:%s/solr/%s/replication";
+    private final static long SOLR_DUMMY_RESULT_COUNT = -1;
+    private static List<String> SOLR_CORES = Arrays.asList(new String[]{"http://localhost:%s/solr/admin/cores?wt=xml"});
 
-    private static String SOLR_CONFIG_URL = "http://localhost:%S/solr/%s/admin/file?file=solrconfig-dummy.xml";
 
     public static void main(String[] args) {
         SpringApplication.run(SolrConfigMonitor.class, args);
     }
 
+    public SolrConfigMonitor() {
+        // TODO
+
+    }
+
     @Bean
     public CommandLineRunner commandLineRunner(ApplicationContext ctx) {
         return args -> {
-            /*ConfigurationBuilder<BuiltConfiguration> builder
-                    = ConfigurationBuilderFactory.newConfigurationBuilder();
-            RootLoggerComponentBuilder rootLogger
-                    = builder.newRootLogger(Level.DEBUG);
-            Configurator.initialize(builder.build());
-            builder.add(rootLogger);*/
-
-            /*
-            LoggerConfig logconfig = logctx.getConfiguration().getRootLogger();
-
-            log.info(logconfig.getLevel()); // INFO
-
-
-            logconfig.setLevel(Level.DEBUG);
-            logconfig.setLevel(Level.DEBUG);
-
-            log.info(logconfig.getLevel()); // DEBUG
-
-            logctx.updateLoggers();
-            */
 
 
             log.info("### Solr Config Monitor ###");
-            getSolrConfig();
-            loadSolrConfig();
+            // getSolrConfig();
+            testSolrConfig();
 
             System.exit(0);
         };
@@ -106,7 +95,7 @@ public class SolrConfigMonitor {
     }
 
 
-    private  static void getSolrConfig() {
+    private static void getSolrConfig() {
         ObjectMapper objectMapper = new XmlMapper();
         Solr servers = null;
         try {
@@ -118,14 +107,12 @@ public class SolrConfigMonitor {
             e.printStackTrace();
         }
 
-        for(Server server : servers.getServer()) {
-            log.info(server.getType());
-        }
-        log.info(servers);
+
+        log.debug(servers);
 
     }
 
-    public static void loadSolrConfig() {
+    public static void testSolrConfig() {
         // Create XPathFactory object
         XPathFactory xpathFactory = XPathFactory.newInstance();
 
@@ -134,22 +121,43 @@ public class SolrConfigMonitor {
         boolean testResult = true;
 
 
+        Servers servers = solrConfigService.getServersInfo();
+        for (com.ds.solr.pojo.Server server : servers.getServer()) {
+            log.info("#################### " + server.getGroup() + " ####################");
+            // Loop on the each instance in the group
 
+            long prevInstanceResultCount = -1;
+            for (Instance instance : server.getInstance()) {
+                String host = instance.getHost();
+                String port = instance.getPort();
+                String masterHost = instance.getMasterHost();
+                instance.getMasterHost();
 
-        for (Map.Entry<String, String> entry : SOLR_INSTANCES.entrySet()) {
-            String solrInstancePort = entry.getKey();
-            log.info("solrInstancePort" + solrInstancePort);
-            for (String coreUrl : SOLR_CORES) {
-                coreUrl = String.format(coreUrl, solrInstancePort);
-                log.info("############### Core Url ############### :" + coreUrl);
-                List<String> solrCoreNames = getCoreNames(loadXmlByUrl(coreUrl), xpath);
-                for (String solrCoreName : solrCoreNames) {
-                    log.info("Solr Core name : {}", solrCoreName);
+                String adminUrl = String.format(SOLR_ADMIN_URL_FORMAT, host, port);
 
+                // Load all cores
+                Document adminInfo = loadXmlByUrl(adminUrl);
+                if (null != adminInfo) {
+                    List<String> cores = getCoreNames(adminInfo, xpath);
+                    for (String core : cores) {
+                        String solrconfigUrl = String.format(SOLR_CONFIG_URL_FORMAT, host, port, core);
+                        String solrQueryUrl = String.format(SOLR_QUERY_URL_FORMAT, host, port, core);
+                        Document solrconfigInfo = loadXmlByUrl(solrconfigUrl);
+                        Document solrQueryInfo = loadXmlByUrl(solrQueryUrl);
+                        long currentInstanceResultCount = getResultCount(solrQueryInfo, xpath, core);
+
+                        // Perform Tests
+                        testReplicationConfig(solrconfigInfo, xpath, instance, core);
+                        testResultCount(prevInstanceResultCount, currentInstanceResultCount);
+                        prevInstanceResultCount = currentInstanceResultCount;
+                        log.info("\n");
+                    }
                 }
+
             }
         }
     }
+
     private static Document loadXmlByUrl(String urlString) {
         // if you prefer DOM:
         Document doc = null;
@@ -160,7 +168,7 @@ public class SolrConfigMonitor {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
             doc = builder.parse(conn.getInputStream());
-            TransformerFactory transformerFactory= TransformerFactory.newInstance();
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
             Transformer xform = transformerFactory.newTransformer();
 
             // that’s the default xform; use a stylesheet to get a real one
@@ -184,7 +192,7 @@ public class SolrConfigMonitor {
             NodeList nodes = (NodeList) expr.evaluate(doc, XPathConstants.NODESET);
             for (int i = 0; i < nodes.getLength(); i++) {
                 list.add(nodes.item(i).getNodeValue());
-                log.info("############### Core Name ############### : "+ nodes.item(i).getNodeValue());
+                log.info("#################### Core Name : " + nodes.item(i).getNodeValue());
             }
         } catch (XPathExpressionException e) {
             e.printStackTrace();
@@ -193,58 +201,100 @@ public class SolrConfigMonitor {
     }
 
 
-    private static boolean getReplicationConfig(Document doc, XPath xpath, String solrNodeType) {
-        boolean testResult = true;
-        Boolean replication = true;
-        // solrNodeType = "master";
-        XPathExpression expr = null;
-        String replicationFlag = null;
-        String masterUrl = null;
+    private static boolean testReplicationConfig(Document doc, XPath xpath, Instance instance, String core) {
+        boolean testResult = false;
+        if(doc != null) {
 
-        try {
-            //create XPathExpression object
-            expr =
-                    xpath.compile("/config/requestHandler[@name='/replication']/lst[@name='"+ solrNodeType
-                            + "']/str[@name='enable']/text()");
-            //evaluate expression result on XML document
-            replicationFlag = (String) expr.evaluate(doc, XPathConstants.STRING);
+            XPathExpression masterXpath = null, slaveEnableXpath = null, slaveUrlXpath = null;
+            String masterEnableReplication = null, slaveEnableReplication = null, slaveUrlReplication = null;
+            String masterUrl = null, masterHost = null;
+            try {
+                //create XPathExpression object
+                masterXpath = xpath.compile("/config/requestHandler[@name='/replication']/lst[@name='master']/str[@name='enable']/text()");
+                //evaluate expression result on XML document
+                masterEnableReplication = ((String) masterXpath.evaluate(doc, XPathConstants.STRING)).trim();
+                log.debug("Master : Replication Enable : {}", masterEnableReplication);
 
+                slaveEnableXpath = xpath.compile("/config/requestHandler[@name='/replication']/lst[@name='slave']/str[@name='enable']/text()");
+                //evaluate expression result on XML document
+                slaveEnableReplication = ((String) slaveEnableXpath.evaluate(doc, XPathConstants.STRING)).trim();
+                log.debug("Slave : Replication Enable : {}", slaveEnableReplication);
 
-            expr =
-                    xpath.compile("/config/requestHandler[@name='/replication']/lst[@name='"+ solrNodeType
-                            + "']/str[@name='masterUrl']/text()");
-            //evaluate expression result on XML document
-            replicationFlag = (String) expr.evaluate(doc, XPathConstants.STRING);
+                slaveUrlXpath = xpath.compile("/config/requestHandler[@name='/replication']/lst[@name='slave']/str[@name='masterUrl']/text()");
+                //evaluate expression result on XML document
+                slaveUrlReplication = ((String) slaveUrlXpath.evaluate(doc, XPathConstants.STRING)).trim();
+                log.debug("Slave : Replication URL : {}", slaveUrlReplication);
 
-            if(solrNodeType.equalsIgnoreCase("master") ) {
-                if (replicationFlag!= null && replicationFlag.equalsIgnoreCase("${enable."+ solrNodeType +":true}")) {
-                    // do nothing
+                if (masterEnableReplication != null && instance.getMaster() != null &&
+                        masterEnableReplication.equalsIgnoreCase("${enable.master:" + instance.getMaster() + "}")) {
+                    log.info("Master : Config is correctly configured.");
+                    testResult = true;
                 } else {
-                    testResult = false;
-                    log.info("############### Master Config is incorrectly disabled.");
+                    log.error("Master : Config is incorrectly disabled.");
                 }
+
+                if (instance.getSlave() != null) {
+
+                    if (slaveEnableReplication != null && slaveEnableReplication.equalsIgnoreCase("${enable.slave:" + instance.getSlave() + "}")) {
+                        log.info("Slave : Config is correctly configured.");
+                        testResult = true;
+                    } else {
+                        log.error("Slave : Config is incorrectly disabled.");
+                    }
+
+                    String slaveReplicationUrlWithCoreName = String.format(SOLR_REPLICATION_URL_FORMAT, instance.getHost(), instance.getPort(), core);
+                    String slaveReplicationUrlWithCoreVar = String.format(SOLR_REPLICATION_URL_FORMAT, instance.getHost(), instance.getPort(), "${core.name}");
+
+                    log.debug("Slave : Master Url : {}", slaveReplicationUrlWithCoreVar);
+
+                    if (slaveReplicationUrlWithCoreName != null && (slaveUrlReplication.equalsIgnoreCase(slaveReplicationUrlWithCoreName) ||
+                            slaveUrlReplication.equalsIgnoreCase(slaveReplicationUrlWithCoreVar))) {
+                        log.info("Slave : Replication Url is correctly configured.");
+                        testResult = true;
+                    } else {
+                        log.error("Slave : Replication Url is incorrectly configured.");
+                    }
+
+                } else {
+                    log.error("Slave : Error reading config.");
+                }
+
+            } catch (XPathExpressionException e) {
+                log.error("XPath Error Getting Replication Details", e);
+                testResult = false;
             }
-            if(solrNodeType.equalsIgnoreCase("slave") ) {
-                if (replicationFlag!= null && replicationFlag.equalsIgnoreCase("${enable."+ solrNodeType +":true}")) {
-                    log.info("############### Master : true");
-                } else {
-                    testResult = false;
-                    log.info("############### ERROR : " + solrNodeType  + " is incorrectly configured.");
-                }
-
-                if (replicationFlag!= null && replicationFlag.equalsIgnoreCase("${enable."+ solrNodeType +":true}")) {
-                    log.info("############### Master : true");
-                } else {
-                    testResult = false;
-                    log.info("############### ERROR : " + solrNodeType  + " is incorrectly configured.");
-                }
-
-            }
-        } catch (XPathExpressionException e) {
-            e.printStackTrace();
         }
         return testResult;
     }
 
+    private static boolean testResultCount(long prevInstanceCount, long currentInstanceResultCount) {
+        boolean testResult = false;
 
+        if(currentInstanceResultCount == SOLR_DUMMY_RESULT_COUNT || currentInstanceResultCount == prevInstanceCount) {
+            testResult = true;
+            log.info("Result Count matches");
+        } else {
+            log.error("Result Count does not match");
+        }
+
+        return testResult;
+    }
+
+    private static long getResultCount(Document doc, XPath xpath, String core) {
+        long resultCount = 0;
+        XPathExpression resultCountXpath = null;
+        try {
+            //create XPathExpression object
+            resultCountXpath = xpath.compile("/response/result/@numFound");
+            String count = (String)resultCountXpath.evaluate(doc, XPathConstants.STRING);
+            log.debug("COUNT : " + count);
+            //evaluate expression result on XML document
+            resultCount = (Long.valueOf(count)).longValue();
+            log.debug("Result Count : {}", resultCount);
+        } catch (XPathExpressionException e) {
+            log.error("XPath Error Getting Result Count", e);
+        }
+
+        return resultCount;
+    }
 }

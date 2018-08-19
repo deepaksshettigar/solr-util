@@ -16,6 +16,8 @@ import java.nio.file.Paths;
 
 public class XmlObjectMapping {
     private static final Logger log = LogManager.getLogger(XmlObjectMapping.class);
+
+
     private URI getSolrConfigFilePath() {
         //File file = new File(getClass().getResource("solr-server-config.xml").getFile());
         ClassPathResource res = new ClassPathResource("solr-server-config.xml");
@@ -33,6 +35,7 @@ public class XmlObjectMapping {
         log.info("filePath:" +filePath );
         return uri;
     }
+
 
     public static void main(String[] args) {
     // D:\projects\spring-junit\src\main\resources\solr-server-config.xml
